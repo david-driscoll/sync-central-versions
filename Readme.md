@@ -1,9 +1,9 @@
 <!-- nuke-data
 github:
-  owner: RocketSurgeonsGuild
-  repository: AutoMapper.Extensions
+  owner: david-driscoll
+  repository: sync-central-versions
 azurepipelines:
   account: daviddriscoll
   teamproject: GitHub
-  builddefinition:
+  builddefinition: 8
 -->
