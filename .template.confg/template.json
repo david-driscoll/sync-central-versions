@@ -1,0 +1,68 @@
+{
+    "$schema": "http://json.schemastore.org/template",
+    "author": "David Driscoll",
+    "classifications": ["Common", "Solution", "Rocket Surgery"],
+    "identity": "SyncCentralVersions",
+    "name": "Rocket Surgery Solution",
+    "shortName": "rocketsln",
+    "sourceName": "SyncCentralVersions",
+    "generatorVersions": "[1.0.0.0-*)",
+    "description": "",
+    "tags": {
+        "language": "C#",
+        "type": "project"
+    },
+    "symbols": {
+        "UseFakeItEasy": {
+            "datatype": "bool",
+            "defaultValue": "false",
+            "type": "parameter",
+            "isRequired": false,
+            "description": "Include Rocket.Surgery.Extensions.Testing.FakeItEasy as a testing package reference"
+        },
+        "UseMoq": {
+            "datatype": "bool",
+            "defaultValue": "false",
+            "type": "parameter",
+            "isRequired": false,
+            "description": "Include Rocket.Surgery.Extensions.Testing.Moq as a testing package reference"
+        },
+        "SkipBogus": {
+            "datatype": "bool",
+            "defaultValue": "false",
+            "type": "parameter",
+            "isRequired": false,
+            "description": "Do not include Bogus as a testing package reference"
+        }
+    },
+    "guids": [
+        "D13515CD-50B8-4B5D-AB12-E60CD675D0AA",
+        "AB463365-2D58-4AB2-86DF-F79D08543FEC",
+        "91D4665E-CD95-4214-B94F-8074E1350E18",
+        "1989FF1B-D117-4E85-9A7F-91A427886BBB",
+        "C8C9B89E-2AE5-4A36-8A58-0405AB22D89A",
+        "98D65E28-B836-479F-BDE9-0CA61813E7D2",
+        "E60FDC03-2DF5-4656-9881-6D3878372FB0"
+    ],
+    "sources": [
+        {
+            "rename": {
+                "NotGitVersion.yml": "GitVersion.yml"
+            }
+        }
+    ],
+    "postActions": [],
+    "specialCustomOperations": {
+        "*.yml": {
+            "operations": [
+                {
+                    "type": "conditional",
+                    "configuration": {
+                        "style": "line",
+                        "token": "#"
+                    }
+                }
+            ]
+        }
+    }
+}

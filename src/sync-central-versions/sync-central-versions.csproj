@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>netcoreapp3.1;netcoreapp2.1</TargetFrameworks>
+
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>sync-central-versions</ToolCommandName>
+    <IncludeRocketSurgeryHosting>true</IncludeRocketSurgeryHosting>
+  </PropertyGroup>
+  <ItemGroup>
+
+    <PackageReference Include="Buildalyzer" />
+
+    <PackageReference Include="NuGet.Common" />
+    <PackageReference Include="NuGet.Configuration" />
+    <PackageReference Include="NuGet.Frameworks" />
+    <PackageReference Include="NuGet.Packaging" />
+    <PackageReference Include="NuGet.Packaging.Core" />
+    <PackageReference Include="NuGet.Protocol" />
+    <PackageReference Include="NuGet.Resolver" />
+    <PackageReference Include="NuGet.Versioning" />
+  </ItemGroup>
+</Project>

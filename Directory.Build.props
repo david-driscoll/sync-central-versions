@@ -1,0 +1,16 @@
+<Project>
+    <PropertyGroup>
+        <Company>Rocket Surgeons Guild</Company>
+        <Copyright>Copyright Rocket Surgeons Guild © $([System.DateTime]::Now.ToString('yyyy'))</Copyright>
+        <Authors>David Driscoll,Rocket Surgeons Guild contributors</Authors>
+        <LangVersion>8.0</LangVersion>
+        <Nullable>enable</Nullable>
+        <LegacySupportPackagesProps>Packages.support.props</LegacySupportPackagesProps>
+        <IncludeBaseLibrary>false</IncludeBaseLibrary>
+        <EnableAutoMapper>false</EnableAutoMapper>
+        <EnableFluentValidation>false</EnableFluentValidation>
+        <EnableMediatR>false</EnableMediatR>
+        <EnableSerilog>false</EnableSerilog>
+        <EnableDiagnostics>false</EnableDiagnostics>
+    </PropertyGroup>
+</Project>
