@@ -11,11 +11,8 @@ using Buildalyzer;
 using JetBrains.Annotations;
 using McMaster.Extensions.CommandLineUtils;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using NuGet.Configuration;
 using NuGet.Protocol.Core.Types;
-using sync_central_versions;
-using Rocket.Surgery.Conventions;
 using Rocket.Surgery.Extensions.CommandLine;
 
 namespace sync_central_versions
@@ -38,7 +35,7 @@ namespace sync_central_versions
         }
     }
 
-    [Command(Description =
+    [Command("sync", Description =
         "Synchronize all the packages with the projects in the given solution.  This will add any packages that might be missing (as defined by sdks or external references).  It will remove any packages that are no longer referenced.  And also move all versions from packages into the give packages props.")]
     class Sync
     {
@@ -54,7 +51,8 @@ namespace sync_central_versions
         [Option(CommandOptionType.SingleValue, Description = "Specify the solution to process", ShortName = "sln")]
         public string Solution { get; set; }
 
-        [Option(CommandOptionType.SingleValue, Description = "Specify the file that contains your versions (usually Packages.props)", ShortName = "props")]
+        [Option(CommandOptionType.SingleValue,
+            Description = "Specify the file that contains your versions (usually Packages.props)", ShortName = "props")]
         public string PackagesProps { get; set; }
 
         [UsedImplicitly]
@@ -68,28 +66,46 @@ namespace sync_central_versions
                 Solution = Directory.EnumerateFiles(Directory.GetCurrentDirectory(), "*.sln").FirstOrDefault();
             }
 
-            if (string.IsNullOrWhiteSpace(Solution))
+            if (string.IsNullOrWhiteSpace(PackagesProps))
             {
-                PackagesProps = Directory.EnumerateFiles(Directory.GetCurrentDirectory(), "Packages.props")
-                    .FirstOrDefault();
+                PackagesProps = Path.Combine(Directory.GetCurrentDirectory(), "Packages.props");
             }
 
             try
             {
-                if (Solution == null)
+                if (Solution == null || !File.Exists(Solution))
                 {
-                    _logger.LogCritical("No solution found or provided");
-                    return 1;
-                }
-                if (PackagesProps == null)
-                {
-                    _logger.LogCritical("No Packages.props found or provided");
+                    _logger.LogCritical(
+                        "No solution found or provided (Solution: {Solution}, CurrentDirectory: {CurrentDirectory})",
+                        Solution, Directory.GetCurrentDirectory());
                     return 1;
                 }
 
-                await _packageSync.AddMissingPackages(Solution, PackagesProps, cts.Token).ConfigureAwait(false);
-                await _packageSync.RemoveExtraPackages(Solution, PackagesProps, cts.Token).ConfigureAwait(false);
-                await _packageSync.MoveVersions(Solution, PackagesProps, cts.Token).ConfigureAwait(false);
+                if (PackagesProps == null || !File.Exists(PackagesProps))
+                {
+                    _logger.LogCritical(
+                        "No Packages.props found or provided (PackagesProps: {PackagesProps}, CurrentDirectory: {CurrentDirectory})",
+                        PackagesProps, Directory.GetCurrentDirectory());
+                    return 1;
+                }
+
+                static async Task<XDocument> LoadDocument(string file)
+                {
+                    await using var packagesFile = File.OpenRead(file);
+                    return XDocument.Load(packagesFile, LoadOptions.PreserveWhitespace);
+                }
+
+                var document = await LoadDocument(PackagesProps);
+
+                await _packageSync.AddMissingPackages(Solution, document, cts.Token).ConfigureAwait(false);
+                await _packageSync.RemoveExtraPackages(Solution, document, cts.Token).ConfigureAwait(false);
+                await _packageSync.MoveVersions(Solution, document, cts.Token).ConfigureAwait(false);
+
+                await PackageSync.UpdateXDocument(PackagesProps, document, cts.Token).ConfigureAwait(false);
+                {
+                    document = await LoadDocument(PackagesProps);
+                    await PackageSync.UpdateXDocument(PackagesProps, document, cts.Token).ConfigureAwait(false);
+                }
             }
             catch (TaskCanceledException tce)
             {
@@ -110,29 +126,30 @@ namespace sync_central_versions
     class PackageSync
     {
         private ILogger<PackageSync> _logger;
+        private readonly ILoggerFactory _loggerFactory;
 
-        public PackageSync(ILogger<PackageSync> logger) => _logger = logger;
+        public PackageSync(ILogger<PackageSync> logger, ILoggerFactory loggerFactory)
+        {
+            _logger = logger;
+            _loggerFactory = loggerFactory;
+        }
 
-        public async Task AddMissingPackages(string solutionPath, string packagesProps,
+        public async Task AddMissingPackages(string solutionPath, XDocument packagesProps,
             CancellationToken cancellationToken
         )
         {
-            XDocument document;
-            {
-                await using var packagesFile = File.OpenRead(packagesProps);
-                document = XDocument.Load(packagesFile, LoadOptions.PreserveWhitespace);
-            }
 
-            var packageReferences = document.Descendants("PackageReference")
-                .Concat(document.Descendants("GlobalPackageReference"))
+            var packageReferences = packagesProps.Descendants("PackageReference")
+                .Concat(packagesProps.Descendants("GlobalPackageReference"))
                 .Select(x => x.Attributes().First(x => x.Name == "Include" || x.Name == "Update").Value)
                 .ToArray();
 
             _logger.LogTrace("Found {0} existing package references", packageReferences.Length);
 
             var missingPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var project in GetProjects(solutionPath).SelectMany(project => project.Build()))
+            var sln = GetSolution(solutionPath);
+            var projects = sln.Projects.Values.SelectMany(project => project.Build()).ToImmutableArray();
+            foreach (var project in projects)
             {
                 if (project.Items.TryGetValue("PackageReference", out var projectPackageReferences))
                 {
@@ -146,15 +163,11 @@ namespace sync_central_versions
                             continue;
                         }
 
-                        _logger.LogInformation("Package {0} is missing and will be added to {1}", item.ItemSpec,
-                            packagesProps);
+                        _logger.LogInformation("Package {0} is missing and will be added to props file", item.ItemSpec);
                         missingPackages.Add(item.ItemSpec);
                     }
                 }
             }
-
-            var itemGroups = document.Descendants("ItemGroup").ToImmutableArray();
-            var itemGroupToInsertInto = itemGroups.Count() > 2 ? itemGroups.Skip(1).Take(1).First() : itemGroups.Last();
 
             var providers = new List<Lazy<INuGetResourceProvider>>();
             providers.AddRange(Repository.Provider.GetCoreV3()); // Add v3 API support
@@ -184,38 +197,31 @@ namespace sync_central_versions
                         packageInfo.Identity.Id
                     );
                 }
-                itemGroupToInsertInto.Add(element);
+
+                GetItemGroupToInsertInto(packagesProps, projects.FirstOrDefault(z => z.PackageReferences.ContainsKey(item)),
+                    item).Add(element);
             }
 
-            OrderPackageReferences(itemGroups.ToArray());
-            RemoveDuplicatePackageReferences(document);
-
-            await UpdateXDocument(packagesProps, document, cancellationToken).ConfigureAwait(false);
+            OrderPackageReferences(packagesProps);
+            RemoveDuplicatePackageReferences(packagesProps);
         }
 
         public async Task RemoveExtraPackages(
             string solutionPath,
-            string packagesProps, CancellationToken cancellationToken
+            XDocument packagesProps, CancellationToken cancellationToken
         )
         {
-            XDocument document;
-            {
-                using var packagesFile = File.OpenRead(packagesProps);
-                document = XDocument.Load(packagesFile, LoadOptions.PreserveWhitespace);
-            }
-            var packageReferences = document.Descendants("PackageReference")
-                .Concat(document.Descendants("GlobalPackageReference"))
+            var packageReferences = new HashSet<string?>(packagesProps.Descendants("PackageReference")
+                .Concat(packagesProps.Descendants("GlobalPackageReference"))
                 .Select(x => x.Attributes().First(x => x.Name == "Include" || x.Name == "Update").Value)
-                .ToList();
+                .ToList());
 
-            foreach (var project in GetProjects(solutionPath).SelectMany(project => project.Build()))
+            foreach (var project in GetSolution(solutionPath).Projects.Values.SelectMany(project => project.Build()))
             {
-                if (project.Items.TryGetValue("PackageReference", out var projectPackageReferences))
+                if (!project.Items.TryGetValue("PackageReference", out var projectPackageReferences)) continue;
+                foreach (var item in projectPackageReferences)
                 {
-                    foreach (var item in projectPackageReferences)
-                    {
-                        packageReferences.Remove(item.ItemSpec);
-                    }
+                    packageReferences.Remove(item.ItemSpec);
                 }
             }
 
@@ -223,9 +229,9 @@ namespace sync_central_versions
             {
                 foreach (var package in packageReferences)
                 {
-                    foreach (var item in document.Descendants("PackageReference")
+                    foreach (var item in packagesProps.Descendants("PackageReference")
                         .Concat(
-                            document.Descendants("GlobalPackageReference")
+                            packagesProps.Descendants("GlobalPackageReference")
                                 .Where(
                                     x => x.Attributes().First(x => x.Name == "Include" || x.Name == "Update").Value
                                         .Equals(package, StringComparison.OrdinalIgnoreCase)
@@ -241,33 +247,22 @@ namespace sync_central_versions
                     }
                 }
             }
-
-            await UpdateXDocument(packagesProps, document, cancellationToken).ConfigureAwait(false);
         }
 
         public async Task MoveVersions(
             string solutionPath,
-            string packagesProps, CancellationToken cancellationToken
+            XDocument packagesDocument, CancellationToken cancellationToken
         )
         {
-            XDocument packagesDocument;
-            {
-                using var packagesFile = File.OpenRead(packagesProps);
-                packagesDocument = XDocument.Load(packagesFile, LoadOptions.None);
-            }
-
-            var itemGroups = packagesDocument.Descendants("ItemGroup");
-            var itemGroupToInsertInto = itemGroups.Count() > 2 ? itemGroups.Skip(1).Take(1).First() : itemGroups.Last();
-
-            var projects = GetProjects(solutionPath).Select(x => x.ProjectFile.Path)
-                .Select(
-                    path =>
+            var projects = GetSolution(solutionPath).Projects.Values.Select(x => x)
+                .SelectMany(
+                    projectReference => projectReference.Build().Select(project =>
                     {
-                        using var file = File.OpenRead(path);
-                        return (path, document: XDocument.Load(file, LoadOptions.PreserveWhitespace));
-                    }
-                );
-            foreach (var (path, document) in projects)
+                        using var file = File.OpenRead(projectReference.ProjectFile.Path);
+                        return (path: projectReference.ProjectFile.Path,
+                            document: XDocument.Load(file, LoadOptions.PreserveWhitespace), project);
+                    }));
+            foreach (var (path, document, project) in projects)
             {
                 foreach (var item in document.Descendants("PackageReference")
                     .Where(x => !string.IsNullOrEmpty(x.Attribute("Version")?.Value))
@@ -275,19 +270,21 @@ namespace sync_central_versions
                 )
                 {
                     _logger.LogInformation(
-                        "Found Version {Version} on {Package} in {Path} and moving it to {NewLocation}",
+                        "Found Version {Version} on {Package} in {Path} and moving it to props file",
                         item.Attribute("Version").Value,
                         item.Attribute("Include").Value,
-                        path,
-                        packagesProps
+                        path
                     );
                     var @new = new XElement(item);
                     @new.SetAttributeValue("Update", @new.Attribute("Include").Value);
                     @new.SetAttributeValue("Include", null);
                     @new.SetAttributeValue("Version", null);
                     @new.SetAttributeValue("Version", item.Attribute("Version").Value);
-                    foreach (var an in itemGroupToInsertInto.Descendants("PackageReference").Last()
-                        .Annotations<XmlSignificantWhitespace>())
+                    var itemGroupToInsertInto =
+                        GetItemGroupToInsertInto(document, project, @new.Attribute("Update").Value);
+                    foreach (var an in itemGroupToInsertInto.Descendants("PackageReference").LastOrDefault()
+                                           ?.Annotations<XmlSignificantWhitespace>() ??
+                                       Enumerable.Empty<XmlSignificantWhitespace>())
                     {
                         @new.AddAnnotation(an);
                     }
@@ -299,24 +296,45 @@ namespace sync_central_versions
                 await UpdateXDocument(path, document, cancellationToken).ConfigureAwait(false);
             }
 
-            OrderPackageReferences(itemGroups.ToArray());
+            OrderPackageReferences(packagesDocument);
             RemoveDuplicatePackageReferences(packagesDocument);
-
-            await UpdateXDocument(packagesProps, packagesDocument, cancellationToken).ConfigureAwait(false);
         }
 
-        private static IEnumerable<ProjectAnalyzer> GetProjects(string solutionPath)
+        static XElement GetItemGroupToInsertInto(XDocument document, AnalyzerResult? project, string packageName)
         {
-            var am = new AnalyzerManager(solutionPath, new AnalyzerManagerOptions());
-            foreach (var project in am.Projects.Values.Where(
-                x => !x.ProjectFile.Path.EndsWith(".build.csproj", StringComparison.OrdinalIgnoreCase)
-            ))
+            var itemGroups = document.Descendants("ItemGroup").ToImmutableArray();
+            if (itemGroups.Count() <= 3)
             {
-                yield return project;
+                var projectElement = document.Descendants("Project").Single();
+                for (var i = 0; i < 4 - itemGroups.Count(); i++)
+                {
+                    projectElement.Add(new XElement("ItemGroup"));
+                }
+
+                itemGroups = document.Descendants("ItemGroup").ToImmutableArray();
+                // itemGroups[0].SetAttributeValue("Kind", "Global Package References");
+                // itemGroups[1].SetAttributeValue("Kind", "Build Package References");
+                // itemGroups[2].SetAttributeValue("Kind", "Package References");
+                // itemGroups[3].SetAttributeValue("Kind", "Test Package References");
             }
+
+            if (project?.PackageReferences.TryGetValue("Nuke.Common", out _) == true)
+            {
+                return itemGroups.Skip(1).First();
+            }
+
+            if (project?.PackageReferences.TryGetValue("xunit", out _) == true && !packageName.StartsWith("System."))
+            {
+                return itemGroups.Last();
+            }
+
+            return itemGroups.Skip(2).First();
         }
 
-        private static async Task UpdateXDocument(string path, XDocument document, CancellationToken cancellationToken)
+        private AnalyzerManager GetSolution(string solutionPath) => new AnalyzerManager(solutionPath,
+            new AnalyzerManagerOptions() {LoggerFactory = _loggerFactory});
+
+        public static async Task UpdateXDocument(string path, XDocument document, CancellationToken cancellationToken)
         {
             await using var fileWrite = File.Open(path, FileMode.Truncate);
             using var writer = XmlWriter.Create(
@@ -326,16 +344,19 @@ namespace sync_central_versions
             await document.SaveAsync(writer, cancellationToken).ConfigureAwait(false);
         }
 
-        private static void OrderPackageReferences(params XElement[] itemGroups)
+        private static void OrderPackageReferences(XDocument document)
         {
-            foreach (var itemGroup in itemGroups)
+            foreach (var itemGroup in document.Descendants("ItemGroup"))
             {
-                var toSort = itemGroup.Descendants("PackageReference").ToArray();
-                var sorted = itemGroup.Descendants("PackageReference").Select(x => new XElement(x))
-                    .OrderBy(x => x.Attribute("Include")?.Value ?? x.Attribute("Update")?.Value).ToArray();
-                for (var i = 0; i < sorted.Length; i++)
+                foreach (var kind in new[] {"GlobalPackageReference", "PackageReference"})
                 {
-                    toSort[i].ReplaceAttributes(sorted[i].Attributes());
+                    var toSort = itemGroup.Descendants(kind).ToArray();
+                    var sorted = itemGroup.Descendants(kind).Select(x => new XElement(x))
+                        .OrderBy(x => x.Attribute("Include")?.Value ?? x.Attribute("Update")?.Value).ToArray();
+                    for (var i = 0; i < sorted.Length; i++)
+                    {
+                        toSort[i].ReplaceAttributes(sorted[i].Attributes());
+                    }
                 }
             }
         }
