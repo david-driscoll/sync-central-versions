@@ -43,21 +43,21 @@ variables:
     - name: DOTNET_SKIP_FIRST_TIME_EXPERIENCE
       value: 'true'
     - name: CodeCovToken
-      value: '39bbc785-e9d6-4144-8d0e-4452b34dc50c'
-    - group: rsg-bot
+      value: '2587651e-3ffb-479f-93bb-43197d8e972a'
+    - group: daviddriscoll
 
 jobs:
     - template: pipeline/nuke.yml@rsg
       parameters:
           AuthNuGetFeeds:
-              - name: RocketSurgeonsGuild
-                source: https://nuget.pkg.github.com/RocketSurgeonsGuild/index.json
+              - name: david-driscoll
+                source: https://nuget.pkg.github.com/david-driscoll/index.json
                 username: $(GitHub.UserName)
                 password: $(GitHub.Token)
           Configuration: $(Configuration)
           Verbosity: $(Verbosity)
           GitHub: true
-          GitHubAuthVariableGroup: rsg-bot
+          GitHubAuthVariableGroup: daviddriscoll
           GitHubPackages: true
           MyGetPackages: false
           DotNetSdk:
