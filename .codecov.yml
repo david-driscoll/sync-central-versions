@@ -1,6 +1,5 @@
 codecov:
   require_ci_to_pass: no
-  bot: rsg-bot
   strict_yaml_branch: master
 
 coverage:
