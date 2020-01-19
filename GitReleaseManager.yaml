@@ -1,0 +1,9 @@
+# create:
+#   include-footer: false
+#   footer-heading: ''
+#   footer-content: ''
+#   footer-includes-milestone: true
+export:
+  include-created-date-in-title: false
+  perform-regex-removal: true
+  regex-text: '([a-f\d]{40}\s|:boom:|:rocket:|:fire:|:blue_book:|:beetle:|:squirrel:|:raised_hand:|:sparkles:|:package:)'
