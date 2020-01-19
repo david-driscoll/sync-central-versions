@@ -1,8 +1,12 @@
 using System.Linq;
 using Nuke.Common;
 using Nuke.Common.Execution;
+using Nuke.Common.Tooling;
+using Nuke.Common.Tools.DotNet;
 using Rocket.Surgery.Nuke.DotNetCore;
 using Rocket.Surgery.Nuke;
+using Nuke.Common.Tools;
+using static Nuke.Common.Tools.DotNet.DotNetTasks;
 
 [CheckBuildProjectConfigurations]
 [UnsetVisualStudioEnvironmentVariables]
@@ -23,6 +27,7 @@ class Solution : DotNetCoreBuild, IDotNetCoreBuild
         .DependsOn(Build)
         .DependsOn(Test)
         .DependsOn(Pack)
+        .DependsOn(Install)
         ;
 
     public new Target Restore => _ => _.With(this, DotNetCoreBuild.Restore);
@@ -32,4 +37,20 @@ class Solution : DotNetCoreBuild, IDotNetCoreBuild
     public new Target Test => _ => _.With(this, DotNetCoreBuild.Test);
 
     public new Target Pack => _ => _.With(this, DotNetCoreBuild.Pack);
+
+    public Target Install => _ => _
+        .After(Pack)
+        .OnlyWhenStatic(() => IsLocalBuild)
+        .Executes(() =>
+        {
+            try
+            {
+                DotNetToolUninstall(x => x.EnableGlobal().SetPackageName("sync-central-versions")
+                    .ResetVerbosity());
+            } catch {}
+
+            DotNetToolInstall(x =>
+                x.EnableGlobal().SetVersion(GitVersion.SemVer).AddSources(NuGetPackageDirectory)
+                    .SetPackageName("sync-central-versions"));
+        });
 }
