@@ -10,6 +10,12 @@ using static Nuke.Common.Tools.DotNet.DotNetTasks;
 
 [CheckBuildProjectConfigurations]
 [UnsetVisualStudioEnvironmentVariables]
+[AzurePipelinesSteps(
+    InvokedTargets = new[] { nameof(Default) },
+    NonEntryTargets = new[] { nameof(BuildVersion), nameof(Generate_Code_Coverage_Reports), nameof(Default) },
+    ExcludedTargets = new[] { nameof(Restore), nameof(DotnetToolRestore) },
+    Parameters = new[] { nameof(CoverageDirectory), nameof(ArtifactsDirectory), nameof(Verbosity), nameof(Configuration) }
+)]
 class Solution : DotNetCoreBuild, IDotNetCoreBuild
 {
     /// <summary>
@@ -47,7 +53,8 @@ class Solution : DotNetCoreBuild, IDotNetCoreBuild
             {
                 DotNetToolUninstall(x => x.EnableGlobal().SetPackageName("sync-central-versions")
                     .ResetVerbosity());
-            } catch {}
+            }
+            catch { }
 
             DotNetToolInstall(x =>
                 x.EnableGlobal().SetVersion(GitVersion.SemVer).AddSources(NuGetPackageDirectory)
