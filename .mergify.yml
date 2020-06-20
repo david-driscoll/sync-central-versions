@@ -1,14 +1,4 @@
 pull_request_rules:
-<<<<<<< Updated upstream
-    - name: automatic merge when GitHub branch protection passes
-      conditions:
-          - base=master
-          - 'label=:shipit: merge'
-      actions:
-          merge:
-              method: merge
-              strict: smart
-=======
   - name: automatic merge when GitHub branch protection passes (others)
     conditions:
       - base=master
@@ -114,4 +104,3 @@ pull_request_rules:
       label:
         add:
           - ':shipit: merge'
->>>>>>> Stashed changes
