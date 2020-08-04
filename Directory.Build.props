@@ -3,7 +3,8 @@
         <Company>Rocket Surgeons Guild</Company>
         <Copyright>Copyright Rocket Surgeons Guild © $([System.DateTime]::Now.ToString('yyyy'))</Copyright>
         <Authors>David Driscoll,Rocket Surgeons Guild contributors</Authors>
-        <LangVersion>8.0</LangVersion>
+        <LangVersion>preview</LangVersion>
+        <Features>strict</Features>
         <Nullable>enable</Nullable>
         <IncludeBaseLibrary>false</IncludeBaseLibrary>
         <EnableAutoMapper>false</EnableAutoMapper>
@@ -12,4 +13,8 @@
         <EnableSerilog>false</EnableSerilog>
         <EnableDiagnostics>false</EnableDiagnostics>
     </PropertyGroup>
+    <ItemGroup>
+        <ProjectCapability Include="DynamicDependentFile" />
+        <ProjectCapability Include="DynamicFileNesting" />
+    </ItemGroup>
 </Project>
